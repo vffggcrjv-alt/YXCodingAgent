@@ -1,0 +1,1 @@
+- [yx-project-conventions](yx-project-conventions.md) — YX project uses Python with English commit messages and snake_case variable names.
