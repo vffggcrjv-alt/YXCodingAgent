@@ -1,78 +1,87 @@
 # YXCodingAgent
 
-一个基于 Python 的终端 AI 编程助手。它可以理解项目上下文、搜索和修改文件、执行命令，并通过权限控制、沙箱和可追踪的工具调用帮助开发者更安全地完成编程任务。
+一个用 Python 编写的终端 AI 编程助手，也是一个用来理解 Agent 架构的学习型项目。
 
-> 项目状态：持续开发中。API、配置格式和部分高级功能可能发生变化。
+YXCodingAgent 的重点不是做一个可以替代成熟产品的生产级工具，而是把一个 Coding Agent 的关键环节拆开、实现并串起来：模型如何驱动工具，工具如何修改真实项目，权限如何介入执行过程，以及多 Agent 如何协作完成任务。
 
-## 项目简介
+> **项目定位**
+>
+> YXCodingAgent 和 Claude Code 的差距，主要不在 Agent 架构层面，而在大量细节打磨：交互体验、可靠性、边界处理、性能、兼容性和工程化成熟度。本项目适合阅读、实验和二次开发，不应默认用于重要生产环境。
 
-YXCodingAgent（命令名：`yx`）面向需要在终端中使用 AI 辅助开发的个人开发者和团队。它将大语言模型与本地项目工具连接起来，让你可以用自然语言完成代码阅读、问题定位、功能实现、测试运行和项目总结。
+## 能做什么
 
-项目不会把 API Key 写入源码或配置模板。模型服务通过环境变量配置，真实配置、会话记录和运行日志默认保存在本地并被 Git 忽略。
+- 在终端中进行交互式对话，或使用 `-p` 执行一次性任务
+- 读取、搜索、编辑项目文件，查看差异并执行开发命令
+- 通过多轮模型调用和工具调用完成连续任务
+- 使用 `default`、`accept-edits`、`plan`、`bypass` 权限模式控制敏感操作
+- 接入 OpenAI-compatible 和 Anthropic Messages API
+- 通过命令行 MCP 服务扩展工具能力
+- 加载 Skills、Hooks、项目记忆和会话记录
+- 创建子 Agent，并通过任务、消息和团队机制协作
+- 使用 Git worktree 隔离并行任务
+- 自动处理上下文预算、工具结果持久化和会话压缩
+- 以终端 UI、远程 WebSocket 服务或 `stream-json` 输出运行
 
-## 核心功能
+## 架构概览
 
-- **终端交互**：支持交互式会话和单次提示词任务。
-- **项目理解**：搜索、读取、编辑文件，查看差异，并保留会话上下文。
-- **命令执行**：在项目目录中执行开发命令，并返回工具结果与错误信息。
-- **权限控制**：支持 `default`、`accept-edits`、`plan` 和 `bypass` 模式。
-- **多模型接入**：支持 OpenAI 兼容接口和 Anthropic Messages API，可配置多个 Provider。
-- **MCP 扩展**：接入命令行或 HTTP/SSE MCP 服务，扩展外部工具能力。
-- **子 Agent 与团队协作**：拆分任务、跟踪进度，并让多个 Agent 协同处理复杂任务。
-- **Git worktree**：为隔离任务创建独立工作树，降低并行修改之间的影响。
-- **记忆与上下文管理**：支持会话记录、上下文压缩、项目记忆和任务通知。
-- **远程模式**：通过 WebSocket 服务和浏览器界面访问 Agent。
-- **流式输出**：单次任务支持普通文本和 NDJSON `stream-json` 输出。
+一次典型任务大致经过下面的循环：
 
-## 系统要求
+```text
+用户输入
+   │
+   ▼
+ConversationManager ── 项目指令 / 记忆 / 会话历史
+   │
+   ▼
+Agent Loop ── 模型流式响应
+   │                 │
+   │                 ├─ 文本 / 思考事件
+   │                 └─ Tool Use
+   ▼
+PermissionChecker ── 规则、危险命令、路径沙箱、权限模式
+   │
+   ▼
+Tool Registry ── 文件 / Shell / Git / Agent / Team / MCP
+   │
+   ▼
+工具结果 ── 上下文预算 / 持久化 / 压缩 ── 回到 Agent Loop
+```
 
-- Windows、macOS 或 Linux
-- Python 3.11 或更高版本
-- [uv](https://docs.astral.sh/uv/)
-- 至少一个兼容的模型服务 API Key
+核心实现集中在 `YX__package_tmp/`（Python 包名为 `yx`）。其中：
+
+| 目录 | 作用 |
+| --- | --- |
+| `agent.py` | Agent 主循环、流式事件、工具调用和停止条件 |
+| `client.py` | 模型 Provider 客户端与上下文窗口解析 |
+| `tools/` | 文件、命令、Agent、Team 等工具 |
+| `permissions/` | 权限模式、规则引擎、危险命令检测和路径沙箱 |
+| `context/`、`conversation.py` | 上下文预算、工具结果持久化和会话压缩 |
+| `agents/` | 子 Agent 加载、任务管理和执行追踪 |
+| `teams/` | 多 Agent 团队、任务和消息协作 |
+| `mcp/` | MCP 客户端和工具适配 |
+| `memory/`、`skills/`、`hooks/` | 记忆、技能加载和生命周期钩子 |
+| `worktree/` | Git worktree 创建、隔离和清理 |
+| `app.py`、`remote.py` | 终端 UI 和远程服务入口 |
 
 ## 快速开始
 
-### 1. 安装依赖
+### 环境要求
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- 一个兼容的模型服务 API Key
+- Windows、macOS 或 Linux
+
+### 安装和配置
 
 ```powershell
 uv sync
-```
-
-生产环境可以跳过开发依赖：
-
-```powershell
-uv sync --no-dev
-```
-
-### 2. 配置环境变量
-
-复制环境变量模板：
-
-```powershell
 Copy-Item .env.example .env
-```
-
-然后在本地 `.env` 中填写 API Key。`.env` 只应保存在本机，绝对不要提交到 GitHub：
-
-```dotenv
-OPENAI_API_KEY=你的本地密钥
-ANTHROPIC_API_KEY=你的本地密钥
-DEFAULT_MODEL=example-model
-```
-
-也可以使用其他 Provider 的环境变量，但必须在配置文件中通过 `${ENVIRONMENT_VARIABLE}` 引用，而不是直接写入密钥。
-
-### 3. 配置 Provider
-
-复制配置模板：
-
-```powershell
 New-Item -ItemType Directory -Force .yx
 Copy-Item .yx/config.yaml.example .yx/config.yaml
 ```
 
-示例配置如下，真实密钥通过环境变量读取：
+在 `.env` 中填写本地密钥，在 `.yx/config.yaml` 中选择 Provider。密钥应通过环境变量引用：
 
 ```yaml
 providers:
@@ -82,90 +91,48 @@ providers:
     api_key: "${OPENAI_API_KEY}"
     model: example-model
     thinking: false
-
-permission_mode: default
 ```
 
-如使用 Anthropic，可在 `providers` 中增加对应配置：
+也可以直接使用 Anthropic 配置模板中的 `protocol: anthropic`。`.env`、`.yx/config.yaml`、会话、记忆和日志都属于本地运行数据，请勿提交真实密钥或敏感内容。
 
-```yaml
-  - name: anthropic
-    protocol: anthropic
-    base_url: https://api.anthropic.com
-    api_key: "${ANTHROPIC_API_KEY}"
-    model: claude-sonnet-4-20250514
-```
-
-### 4. 启动
-
-Windows 可以运行：
+### 启动
 
 ```powershell
+# 交互式终端
+uv run yx
+
+# Windows 启动脚本
 .\start.ps1
-```
 
-也可以直接启动：
+# 一次性任务
+uv run yx -p "检查当前项目的测试失败原因，并给出修复建议"
 
-```powershell
-uv run yx
-```
+# 规划模式
+uv run yx --mode plan
 
-## 使用方式
-
-### 交互模式
-
-```powershell
-uv run yx
-```
-
-启动后输入自然语言任务，例如：
-
-```text
-请检查当前项目的测试失败原因，并给出修复方案
-```
-
-### 单次任务模式
-
-```powershell
-uv run yx -p "请检查当前项目并总结主要问题"
-```
-
-### JSON 流输出
-
-适合脚本或其他程序消费 Agent 事件：
-
-```powershell
+# NDJSON 事件流
 uv run yx -p "检查项目" --output-format stream-json
-```
 
-### 远程模式
-
-启动 WebSocket 服务并通过浏览器访问：
-
-```powershell
+# 远程 WebSocket 服务，默认监听 localhost:18888
 uv run yx --remote
 ```
 
-默认地址为 `http://localhost:18888`。远程模式建议只绑定在可信的本机或内网环境，并结合防火墙、反向代理和访问控制使用。
+`-p` 模式会自动处理权限请求，适合脚本化调用；涉及真实文件或命令时，仍应审阅模型输出和变更结果。
 
-### 覆盖权限模式
-
-```powershell
-uv run yx --mode plan
-```
-
-权限模式说明：
+## 权限模式
 
 | 模式 | 行为 |
 | --- | --- |
 | `default` | 敏感操作执行前请求确认 |
 | `accept-edits` | 自动允许文件编辑，其他敏感操作仍需确认 |
-| `plan` | 只分析和制定计划，不直接执行修改 |
+| `plan` | 只分析和制定计划，不直接修改项目 |
 | `bypass` | 跳过权限确认，仅建议在隔离环境中使用 |
 
-## MCP 配置
+权限检查由规则引擎、危险命令检测器和路径沙箱共同参与。权限控制是安全边界的一部分，但不是对任意代码执行风险的保证；请在可信项目目录中运行，并人工确认高风险操作。
 
-在本地 `.yx/config.yaml` 的 `mcp_servers` 中配置 MCP 服务。命令行 MCP 示例：
+## MCP、Skills 与 Hooks
+
+在 `.yx/config.yaml` 中配置 MCP 服务，例如：
 
 ```yaml
 mcp_servers:
@@ -174,97 +141,45 @@ mcp_servers:
     args: ["-y", "@upstash/context7-mcp"]
 ```
 
-MCP 配置中的 `headers`、`env` 和命令参数同样可能包含密钥。请使用环境变量引用，并确保本地配置不会被提交。
+项目级 Skills 位于 `.yx/skills/`，Hooks 可在配置中声明，用于在 Agent 生命周期或工具调用前后接入额外逻辑。相关配置中的 Token、Header 和环境变量同样不要提交到仓库。
 
-## 安全与隐私
+## 测试与开发
 
-这是一个可以读取文件、执行命令和修改项目的本地开发工具，请在可信的项目目录中使用。
+测试覆盖 Agent 循环、工具调用、权限、上下文压缩、会话、记忆、MCP、Hooks、子 Agent、团队和 worktree 等模块。
 
-- 不要把 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、MCP Token 或其他凭证写入源码、README、截图、Issue、日志或提交信息。
-- 不要提交 `.env`、`.yx/config.yaml`、`.yx/sessions/`、`.yx/session/`、`.yx/memory/`、`.yx/file-history/`、`.yx/debug.log` 和本地历史文件。
-- 使用 `git status --ignored` 和 `git check-ignore -v 文件名` 检查敏感文件是否被忽略。
-- 提交前扫描公开文件和 Git 历史；如果密钥曾经进入提交历史，应立即撤销并重新生成密钥，不能只删除当前文件。
-- 优先使用 `default` 或 `plan` 权限模式；使用 `bypass` 前应确认项目目录和命令风险。
-- 不要把远程模式直接暴露到公网；如确有需要，应配置身份认证、HTTPS/WSS 和网络访问控制。
+```powershell
+uv run pytest
+uv run python -m compileall YX__package_tmp
+uv run yx --help
+```
 
 ## 项目结构
 
 ```text
 YX/
-├── yx/                  # 核心源代码
-│   ├── agents/           # Agent、子 Agent 和任务管理
-│   ├── commands/         # 命令处理器
-│   ├── context/          # 上下文管理
-│   ├── mcp/              # MCP 客户端与工具包装
-│   ├── memory/           # 项目记忆与会话记忆
-│   ├── permissions/      # 权限规则与安全检查
-│   ├── teams/            # 团队协作
-│   ├── tools/            # 文件、命令和 Agent 工具
-│   ├── worktree/         # Git worktree 隔离
-│   ├── app.py            # 终端应用
-│   └── remote.py         # 远程服务模式
-├── tests/                # 自动化测试
-├── .env.example          # 环境变量模板
-├── .yx/config.yaml.example # Provider 配置模板
-├── start.ps1             # Windows 启动脚本
-├── pyproject.toml        # Python 项目配置
-└── uv.lock               # 依赖锁定文件
+├── YX__package_tmp/      # 当前 Python 实现包（包名 yx）
+├── tests/                 # 自动化测试
+├── .yx/                   # 本地配置、会话、记忆、Skills 和日志
+├── pyproject.toml         # 项目元数据、依赖和 yx 命令入口
+├── uv.lock                # 依赖锁定
+└── start.ps1              # Windows 启动脚本
 ```
 
-## 开发与测试
+## 学习路线
 
-```powershell
-uv run yx --help
-uv run python -m compileall yx
-uv run pytest
-```
+推荐按以下顺序阅读源码：
 
-## 常见问题
-
-### 启动时提示缺少 API Key
-
-确认已经创建本地 `.env`，并且 `.yx/config.yaml` 中的 `api_key` 使用了正确的环境变量名称。修改 `.env` 后重新启动程序。
-
-### 如何切换模型或服务商？
-
-编辑本地 `.yx/config.yaml` 的 `providers` 配置。可以同时配置多个 Provider，启动后根据界面提示选择。
-
-### Agent 是否会自动执行危险命令？
-
-默认权限模式会在敏感操作前请求确认。即使使用自动允许模式，也应检查命令内容和变更差异，并在隔离环境中运行高风险任务。
+1. 从 `__main__.py` 了解命令行入口和运行模式
+2. 阅读 `agent.py`，理解模型响应、工具调用和 Agent Loop
+3. 阅读 `tools/`，理解模型如何影响真实项目
+4. 阅读 `permissions/`，理解执行前的安全检查
+5. 阅读 `context/` 和 `conversation.py`，理解长会话管理
+6. 最后阅读 `agents/`、`teams/`、`mcp/` 和 `worktree/`，理解能力扩展与协作
 
 ## 贡献
 
-欢迎通过 Issue 报告问题、提出功能建议或提交 Pull Request。提交前请：
-
-1. 不提交 API Key、个人配置、会话数据和日志。
-2. 运行 `uv run pytest` 和 `uv run python -m compileall yx`。
-3. 在 Pull Request 中说明改动目的、测试方式和可能的兼容性影响。
-
-## GitHub 项目文案
-
-### 推荐项目简介
-
-```text
-基于 Python 的终端 AI 编程助手，支持项目理解、文件编辑、命令执行、多 Agent 协作、MCP 扩展、Git worktree 隔离和权限控制。
-```
-
-### 推荐 Topics
-
-```text
-python, ai, coding-agent, terminal, cli, llm, mcp, developer-tools, automation, openai, anthropic
-```
-
-### 英文短简介
-
-```text
-A Python-based terminal AI coding assistant with tool use, permission controls, MCP integration, multi-agent collaboration, and Git worktree isolation.
-```
-
-## 许可证
-
-本项目当前尚未确定正式开源许可证。在许可证文件补充前，请不要将本项目用于需要明确授权条款的生产或商业场景。
+欢迎通过 Issue 讨论架构、实现细节和实验结果，或提交 Pull Request。提交前请运行测试，并确认没有包含 `.env`、API Key、会话数据、记忆文件、日志或其他本地敏感信息。
 
 ## 免责声明
 
-AI 生成的代码、命令和解释可能存在错误或安全风险。执行命令、提交代码、修改数据或进行其他重要操作前，请人工检查内容并自行确认结果。项目维护者不对因使用本工具造成的数据丢失、服务费用、系统损坏或其他损失承担责任。
+这是学习型项目。模型可能生成错误的解释、代码或命令；执行前请人工检查，重要数据请提前备份。作者不对因使用本项目造成的数据丢失、费用、系统损坏或其他损失负责。
